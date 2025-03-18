@@ -34,6 +34,8 @@ let gameOver = false;
 let paused = false;
 let consecutiveBlueHits = 0;
 let bombAvailable = false;
+// New variable for blue streak requirement (changed from 10 to 5)
+const BLUE_STREAK_REQUIREMENT = 5;
 
 // Combo system variables
 let comboMultiplier = 1;
@@ -94,6 +96,34 @@ const MULTIPLIER_ZONE = {
     duration: 300, // 5 seconds at 60fps
     timer: 0,
     pulseSize: 0
+};
+
+// Add these UI element variables near the top with other game variables
+const UI = {
+    // Blue streak bar (vertical bar on the side)
+    blueStreakBar: {
+        x: 20,
+        y: 100,
+        width: 15,
+        height: 150,
+        segments: BLUE_STREAK_REQUIREMENT,
+        padding: 3,
+        active: false,
+        pulseSize: 0
+    },
+    // Dash indicator (horizontal bar above player)
+    dashIndicator: {
+        width: 50,
+        height: 6,
+        padding: 2,
+        yOffset: 15 // Distance above player
+    },
+    // Controller icon
+    controllerIcon: {
+        x: canvas.width - 40,
+        y: 30,
+        size: 24
+    }
 };
 
 // Safe gamepad getter function with enhanced Safari support
@@ -882,7 +912,7 @@ function moveBalls() {
                 
                 // Increment consecutive blue hits
                 consecutiveBlueHits++;
-                if (consecutiveBlueHits >= 10 && !bombAvailable) {
+                if (consecutiveBlueHits >= BLUE_STREAK_REQUIREMENT && !bombAvailable) {
                     bombAvailable = true;
                 }
             } else {
@@ -1023,26 +1053,14 @@ function draw() {
         ctx.strokeRect(10, 65, barWidth, barHeight);
     }
     
-    // Draw controller status
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "16px Arial";
-    ctx.fillText(gamepadConnected ? "Controller: Connected" : "Controller: Not Connected", 10, 90);
+    // Draw blue streak bar
+    drawBlueStreakBar();
     
-    // Draw bomb status
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "16px Arial";
-    if (bombAvailable) {
-        ctx.fillText("BOMB READY! Press X button to use", 10, 120);
-    } else {
-        ctx.fillText(`Blue streak: ${consecutiveBlueHits}/10`, 10, 120);
-    }
+    // Draw dash indicator
+    drawDashIndicator();
     
-    // Draw dash status
-    if (player.dashCooldownTimer > 0) {
-        ctx.fillText(`Dash cooldown: ${Math.ceil(player.dashCooldownTimer / 60 * 100) / 100}s`, 10, 150);
-    } else {
-        ctx.fillText(`Dash READY: ${player.dashesAvailable} remaining (LB/RB or Q/E)`, 10, 150);
-    }
+    // Draw controller icon
+    drawControllerIcon();
     
     // Draw pause screen
     if (paused) {
@@ -1364,6 +1382,103 @@ function getDistance(obj1, obj2) {
     const dx = (obj1.x + obj1.width/2) - (obj2.x + obj2.width/2);
     const dy = (obj1.y + obj1.height/2) - (obj2.y + obj2.height/2);
     return Math.sqrt(dx * dx + dy * dy);
+}
+
+// Function to draw the blue streak bar
+function drawBlueStreakBar() {
+    const bar = UI.blueStreakBar;
+    const segmentHeight = (bar.height - (bar.segments - 1) * bar.padding) / bar.segments;
+    
+    // Draw background
+    ctx.fillStyle = "rgba(52, 152, 219, 0.2)";
+    ctx.fillRect(bar.x, bar.y, bar.width, bar.height);
+    
+    // Draw filled segments based on consecutive blue hits
+    for (let i = 0; i < bar.segments; i++) {
+        const segmentY = bar.y + bar.height - (i + 1) * segmentHeight - i * bar.padding;
+        
+        if (i < consecutiveBlueHits) {
+            // Calculate brightness based on segment position
+            const brightness = 40 + (i / bar.segments) * 60;
+            ctx.fillStyle = `rgba(52, 152, 219, ${0.5 + (i / bar.segments) * 0.5})`;
+        } else {
+            ctx.fillStyle = "rgba(52, 152, 219, 0.1)";
+        }
+        
+        ctx.fillRect(bar.x, segmentY, bar.width, segmentHeight);
+    }
+    
+    // Add pulsating effect when full
+    if (bombAvailable) {
+        bar.pulseSize = 4 * Math.sin(Date.now() / 200) + 4;
+        
+        // Draw glow around the bar
+        ctx.fillStyle = "rgba(52, 152, 219, 0.3)";
+        ctx.fillRect(
+            bar.x - bar.pulseSize/2, 
+            bar.y - bar.pulseSize/2, 
+            bar.width + bar.pulseSize, 
+            bar.height + bar.pulseSize
+        );
+    }
+}
+
+// Function to draw the dash indicator
+function drawDashIndicator() {
+    const indicator = UI.dashIndicator;
+    const x = player.x + player.width/2 - indicator.width/2;
+    const y = player.y - indicator.yOffset;
+    
+    // Draw background
+    ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
+    ctx.fillRect(x, y, indicator.width, indicator.height);
+    
+    // Calculate fill width based on available dashes
+    let fillWidth = 0;
+    if (player.dashCooldownTimer > 0) {
+        // Show cooldown progress
+        fillWidth = indicator.width * (1 - player.dashCooldownTimer / player.dashCooldown);
+    } else if (player.dashesAvailable === 2) {
+        // Full if 2 dashes available
+        fillWidth = indicator.width;
+    } else if (player.dashesAvailable === 1) {
+        // Half if 1 dash available
+        fillWidth = indicator.width / 2;
+    }
+    
+    // Draw filled portion
+    ctx.fillStyle = player.isDashing ? "#2ecc71" : "#3498db";
+    ctx.fillRect(x, y, fillWidth, indicator.height);
+    
+    // Draw divider in the middle
+    ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+    ctx.fillRect(x + indicator.width/2 - indicator.padding/2, y, indicator.padding, indicator.height);
+}
+
+// Function to draw the controller icon
+function drawControllerIcon() {
+    const icon = UI.controllerIcon;
+    
+    // Set color based on connection status
+    if (gamepadConnected) {
+        ctx.fillStyle = "#2ecc71"; // Green for connected
+    } else {
+        ctx.fillStyle = "rgba(255, 255, 255, 0.3)"; // Gray for disconnected
+    }
+    
+    // Draw a simple controller icon
+    // Main body
+    ctx.fillRect(icon.x - icon.size/2, icon.y, icon.size, icon.size/2);
+    
+    // Left grip
+    ctx.beginPath();
+    ctx.arc(icon.x - icon.size/2, icon.y + icon.size/4, icon.size/4, Math.PI/2, 3*Math.PI/2);
+    ctx.fill();
+    
+    // Right grip
+    ctx.beginPath();
+    ctx.arc(icon.x + icon.size/2, icon.y + icon.size/4, icon.size/4, -Math.PI/2, Math.PI/2);
+    ctx.fill();
 }
 
 // Start the game
