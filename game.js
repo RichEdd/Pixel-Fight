@@ -1,16 +1,20 @@
 // Get the canvas and context
 const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
+const ctx = canvas.getContext("2d", {
+    alpha: false,
+    desynchronized: true,
+    willReadFrequently: false
+});
 
 // Load controller icon image
 const controllerImage = new Image();
-controllerImage.src = "Assets/game-controller-icon.jpeg";
 controllerImage.onload = function() {
     console.log("Controller icon image loaded successfully");
 };
-controllerImage.onerror = function() {
-    console.error("Error loading controller icon image");
+controllerImage.onerror = function(e) {
+    console.error("Error loading controller icon image:", e);
 };
+controllerImage.src = "Assets/game-controller-icon.svg";
 
 // Check for Safari browser
 const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
@@ -130,9 +134,11 @@ const UI = {
     },
     // Controller icon
     controllerIcon: {
-        x: 40, // Moved to top-left
-        y: 30,
-        size: 24
+        x: 40,  // Position in top-left
+        y: 40,
+        size: 48,  // Increased size for better SVG rendering
+        opacity: 0,  // Add fade in/out effect
+        targetOpacity: 0
     }
 };
 
@@ -286,6 +292,9 @@ window.addEventListener("gamepadconnected", function(e) {
         gamepads[e.gamepad.index] = e.gamepad;
         gamepadConnected = true;
         previousButtonStates[e.gamepad.index] = Array(e.gamepad.buttons.length).fill(false);
+        
+        // Debug log
+        console.log("gamepadConnected set to:", gamepadConnected);
         
         if (isSafari) {
             startSafariGamepadPolling();
@@ -771,49 +780,54 @@ function updateParticles() {
     }
 }
 
+// Replace your drawParticles function with this optimized version
 function drawParticles() {
+    // Batch particles by type
+    const normalParticles = [];
+    const textParticles = [];
+    const trailParticles = [];
+    
     for (const p of particles) {
-        ctx.save();
-        
         if (p.type === 'comboText') {
-            ctx.fillStyle = `rgba(255, 255, 255, ${p.opacity})`;
-            ctx.font = "bold 20px Arial";
-            ctx.textAlign = "center";
-            ctx.fillText(p.text, p.x, p.y);
+            textParticles.push(p);
+        } else if (p.type === 'trail') {
+            trailParticles.push(p);
+        } else {
+            normalParticles.push(p);
         }
-        // For confetti (particles with rotation)
-        else if (p.rotation !== undefined) {
-            ctx.translate(p.x, p.y);
-            ctx.rotate(p.rotation * Math.PI / 180);
-            ctx.fillStyle = p.color;
-            ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size/2);
-        } 
-        // For dash trail particles
-        else if (p.isTrail) {
-            ctx.globalAlpha = p.life / 10; // Fade out
-            ctx.fillStyle = p.color;
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        // For gathering particles (make them fade as they get closer to player)
-        else if (p.type === 'gather') {
-            ctx.fillStyle = p.color;
-            ctx.globalAlpha = p.life / 60; // Fade out as it approaches player
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        // For explosion particles
-        else {
-            ctx.fillStyle = p.color;
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        
-        ctx.restore();
     }
+    
+    // Draw normal particles in batch
+    ctx.save();
+    for (const p of normalParticles) {
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.life / 60;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
+    
+    // Draw text particles in batch
+    ctx.save();
+    ctx.font = "bold 20px Arial";
+    ctx.textAlign = "center";
+    for (const p of textParticles) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${p.opacity})`;
+        ctx.fillText(p.text, p.x, p.y);
+    }
+    ctx.restore();
+    
+    // Draw trail particles in batch
+    ctx.save();
+    for (const p of trailParticles) {
+        ctx.globalAlpha = p.opacity * (p.life / 15);
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
 }
 
 // Game functions
@@ -968,88 +982,18 @@ function moveBalls() {
 
 function collision(obj1, obj2) {
     return obj1.x < obj2.x + obj2.width &&
-           obj1.x + obj1.width > obj2.x &&
+           obj1.x + obj2.width > obj2.x &&
            obj1.y < obj2.y + obj2.height &&
-           obj1.y + obj1.height > obj2.y;
+           obj1.y + obj2.height > obj2.y;
 }
 
 function draw() {
     // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Apply screen shake
-    ctx.save();
-    if (screenShake.duration > 0) {
-        screenShake.offsetX = (Math.random() - 0.5) * screenShake.intensity;
-        screenShake.offsetY = (Math.random() - 0.5) * screenShake.intensity;
-        ctx.translate(screenShake.offsetX, screenShake.offsetY);
-        screenShake.duration--;
-        screenShake.intensity *= 0.9;
-    }
-    
-    // Draw reactive background
-    if (comboMultiplier > 1) {
-        // Update background pulse
-        backgroundEffects.pulseSize = Math.min(canvas.width / 2, backgroundEffects.pulseSize + 2);
-        backgroundEffects.pulseOpacity = 0.1 + (comboMultiplier / MAX_COMBO_MULTIPLIER) * 0.2;
-        // Shift hue based on combo
-        backgroundEffects.hue = 220 + (comboMultiplier / MAX_COMBO_MULTIPLIER) * 60;
-    } else {
-        backgroundEffects.pulseSize *= 0.95;
-        backgroundEffects.pulseOpacity *= 0.95;
-    }
-    
-    // Draw background pulse
-    if (backgroundEffects.pulseSize > 0) {
-        const gradient = ctx.createRadialGradient(
-            canvas.width/2, canvas.height/2, 0,
-            canvas.width/2, canvas.height/2, backgroundEffects.pulseSize
-        );
-        const hue = backgroundEffects.hue;
-        gradient.addColorStop(0, `hsla(${hue}, 70%, 50%, ${backgroundEffects.pulseOpacity})`);
-        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
-    
-    // Draw player glow effect
-    const glowSize = player.isDashing ? 20 : 15;
-    const glowOpacity = player.isDashing ? 0.4 : 0.2;
-    const gradient = ctx.createRadialGradient(
-        player.x + player.width/2, player.y + player.height/2, 0,
-        player.x + player.width/2, player.y + player.height/2, glowSize
-    );
-    gradient.addColorStop(0, `rgba(52, 152, 219, ${glowOpacity})`);
-    gradient.addColorStop(1, 'rgba(52, 152, 219, 0)');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(
-        player.x - glowSize + player.width/2, 
-        player.y - glowSize + player.height/2,
-        player.width + glowSize * 2,
-        player.height + glowSize * 2
-    );
-    
-    // Draw player (pulse effect if bomb is available)
-    if (bombAvailable) {
-        // Create pulsing effect for player when bomb is available
-        const pulseSize = 4 * Math.sin(Date.now() / 200) + 4;
-        
-        // Draw glowing halo
-        ctx.fillStyle = "rgba(52, 152, 219, 0.3)";
-        ctx.beginPath();
-        ctx.arc(player.x + player.width/2, player.y + player.height/2, 
-                player.width/2 + pulseSize, 0, Math.PI * 2);
-        ctx.fill();
-    }
-    
-    // Change player color during dash
-    if (player.isDashing) {
-        ctx.fillStyle = "#2ecc71"; // Green color during dash
-    } else {
-        ctx.fillStyle = player.color;
-    }
+    ctx.fillStyle = "#222";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     // Draw player
+    ctx.fillStyle = player.isDashing ? "#2ecc71" : "#3498db";
     ctx.fillRect(player.x, player.y, player.width, player.height);
     
     // Draw balls
@@ -1061,137 +1005,97 @@ function draw() {
     // Draw particles
     drawParticles();
     
-    // Draw score with combo multiplier
-    ctx.save();
-    if (comboMultiplier > 1) {
-        // Scale the score text based on combo animation
-        ctx.translate(10, 30);
-        ctx.scale(comboAnimationScale, comboAnimationScale);
-        ctx.translate(-10, -30);
-    }
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "20px Arial";
-    ctx.fillText("Score: " + score, 10, 30);
-    ctx.restore();
-    
-    // Draw combo multiplier if active
-    if (comboMultiplier > 1) {
-        ctx.fillStyle = "#f1c40f"; // Yellow color for combo
-        ctx.font = "bold 24px Arial";
-        ctx.fillText(`Combo x${comboMultiplier.toFixed(1)}`, 10, 60);
-        
-        // Draw combo timer bar
-        const barWidth = 100;
-        const barHeight = 5;
-        ctx.fillStyle = "#2ecc71";
-        ctx.fillRect(10, 65, (comboTimer / COMBO_TIME_LIMIT) * barWidth, barHeight);
-        ctx.strokeStyle = "#ffffff";
-        ctx.strokeRect(10, 65, barWidth, barHeight);
-    }
-    
-    // Draw blue streak bar
-    drawBlueStreakBar();
-    
-    // Draw dash indicator
-    drawDashIndicator();
-    
     // Draw controller icon
     drawControllerIcon();
     
-    // Draw blue streak lost effect
-    updateBlueStreakLostEffect();
-    
-    // Draw blue streak activated effect
-    updateBlueStreakActivatedEffect();
-    
-    // Draw pause screen
+    // Draw only game state messages
     if (paused) {
         ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
         ctx.fillStyle = "#ffffff";
         ctx.font = "40px Arial";
         ctx.fillText("PAUSED", canvas.width/2 - 80, canvas.height/2);
-        ctx.font = "20px Arial";
-        ctx.fillText("Press Escape or Start to resume", canvas.width/2 - 120, canvas.height/2 + 40);
     }
     
-    // Game over message
     if (gameOver) {
         ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
         ctx.fillStyle = "#ffffff";
         ctx.font = "40px Arial";
         ctx.fillText("GAME OVER", canvas.width/2 - 100, canvas.height/2);
-        ctx.font = "20px Arial";
-        ctx.fillText("Press R or A button to restart", canvas.width/2 - 120, canvas.height/2 + 40);
     }
     
-    // Draw multiplier zone
-    if (MULTIPLIER_ZONE.active) {
-        const gradient = ctx.createRadialGradient(
-            MULTIPLIER_ZONE.x, MULTIPLIER_ZONE.y, 0,
-            MULTIPLIER_ZONE.x, MULTIPLIER_ZONE.y, MULTIPLIER_ZONE.radius + MULTIPLIER_ZONE.pulseSize
-        );
-        gradient.addColorStop(0, 'rgba(241, 196, 15, 0.2)');
-        gradient.addColorStop(0.7, 'rgba(241, 196, 15, 0.1)');
-        gradient.addColorStop(1, 'rgba(241, 196, 15, 0)');
-        
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(MULTIPLIER_ZONE.x, MULTIPLIER_ZONE.y, 
-                MULTIPLIER_ZONE.radius + MULTIPLIER_ZONE.pulseSize, 0, Math.PI * 2);
-        ctx.fill();
-        
-        // Draw multiplier text
-        ctx.fillStyle = 'rgba(241, 196, 15, 0.8)';
-        ctx.font = 'bold 24px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(`${MULTIPLIER_ZONE.multiplier}x`, MULTIPLIER_ZONE.x, MULTIPLIER_ZONE.y);
-    }
-    
-    // Draw chain lightning
-    for (const lightning of activeChainLightning) {
-        const alpha = lightning.duration / CHAIN_LIGHTNING_DURATION;
-        ctx.strokeStyle = `rgba(52, 152, 219, ${alpha})`;
-        ctx.lineWidth = 2;
-        
-        for (const segment of lightning.segments) {
-            ctx.beginPath();
-            ctx.moveTo(segment.x1, segment.y1);
-            ctx.lineTo(segment.x2, segment.y2);
-            ctx.stroke();
-        }
-    }
-    
-    ctx.restore(); // Restore after screen shake
+    ctx.restore();
 }
 
-// Modified update function with error handling
-function update() {
+// Update the drawControllerIcon function
+function drawControllerIcon() {
     try {
-        // Always check for pause input, even when game is paused or over
-        checkPauseInput();
+        // Smoothly update opacity
+        if (gamepadConnected) {
+            UI.controllerIcon.targetOpacity = 1;
+        } else {
+            UI.controllerIcon.targetOpacity = 0;
+        }
         
-        // Only update game state if not paused and not game over
+        // Lerp the opacity
+        UI.controllerIcon.opacity += (UI.controllerIcon.targetOpacity - UI.controllerIcon.opacity) * 0.1;
+        
+        // Only draw if we have some opacity and the image is loaded and valid
+        if (UI.controllerIcon.opacity > 0.01 && controllerImage.complete && controllerImage.naturalWidth > 0) {
+            ctx.save();
+            ctx.globalAlpha = UI.controllerIcon.opacity;
+            try {
+                // Add image smoothing for better SVG rendering
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                
+                ctx.drawImage(
+                    controllerImage,
+                    UI.controllerIcon.x - UI.controllerIcon.size/2,
+                    UI.controllerIcon.y - UI.controllerIcon.size/2,
+                    UI.controllerIcon.size,
+                    UI.controllerIcon.size
+                );
+            } catch (e) {
+                console.error('Error drawing controller icon:', e);
+            }
+            ctx.restore();
+        }
+    } catch (e) {
+        console.error('Error in drawControllerIcon:', e);
+    }
+}
+
+// Add this near your other variables at the top
+let lastFrameTime = 0;
+const targetFPS = 60;
+const frameInterval = 1000 / targetFPS;
+
+// Replace your update function with this optimized version
+function update(currentTime) {
+    // Skip frames if we're running too fast
+    const deltaTime = currentTime - lastFrameTime;
+    if (deltaTime < frameInterval) {
+        requestAnimationFrame(update);
+        return;
+    }
+    
+    lastFrameTime = currentTime;
+
+    // Rest of your update code...
+    try {
         if (!gameOver && !paused) {
             spawnBall();
             movePlayer();
-            createMovementTrail(); // Add trail creation
-            updateMultiplierZone(); // Add multiplier zone update
             moveBalls();
             updateParticles();
-            updateChainLightning(); // Add chain lightning update
-        } else if (gameOver && keys["r"]) {
-            restartGame();
         }
         
         draw();
         requestAnimationFrame(update);
     } catch (error) {
         console.error('Error in game update:', error);
-        // Attempt to recover
         setTimeout(() => requestAnimationFrame(update), 1000);
     }
 }
@@ -1497,66 +1401,6 @@ function drawDashIndicator() {
     ctx.fillRect(x + indicator.width/2 - indicator.padding/2, y, indicator.padding, indicator.height);
 }
 
-// Function to draw the controller icon
-function drawControllerIcon() {
-    const icon = UI.controllerIcon;
-    
-    // Try to draw the controller image first
-    if (controllerImage.complete && controllerImage.naturalHeight !== 0) {
-        // Image is loaded successfully
-        ctx.save();
-        
-        // Apply opacity based on connection status
-        ctx.globalAlpha = gamepadConnected ? 1.0 : 0.4;
-        
-        // Draw the image
-        const iconSize = icon.size * 1.5; // Make it a bit larger than the original size
-        ctx.drawImage(
-            controllerImage, 
-            icon.x - iconSize/2, 
-            icon.y - iconSize/2, 
-            iconSize, 
-            iconSize
-        );
-        
-        // Add colored indicator based on connection status
-        ctx.beginPath();
-        ctx.arc(
-            icon.x + iconSize/2 - 5, 
-            icon.y - iconSize/2 + 5, 
-            5, 
-            0, 
-            Math.PI * 2
-        );
-        ctx.fillStyle = gamepadConnected ? "#2ecc71" : "#e74c3c"; // Green if connected, red if not
-        ctx.fill();
-        
-        ctx.restore();
-    } else {
-        // Fallback to drawing the simple controller if image fails to load
-        // Set color based on connection status
-        if (gamepadConnected) {
-            ctx.fillStyle = "#2ecc71"; // Green for connected
-        } else {
-            ctx.fillStyle = "rgba(255, 255, 255, 0.3)"; // Gray for disconnected
-        }
-        
-        // Draw a simple controller icon
-        // Main body
-        ctx.fillRect(icon.x - icon.size/2, icon.y, icon.size, icon.size/2);
-        
-        // Left grip
-        ctx.beginPath();
-        ctx.arc(icon.x - icon.size/2, icon.y + icon.size/4, icon.size/4, Math.PI/2, 3*Math.PI/2);
-        ctx.fill();
-        
-        // Right grip
-        ctx.beginPath();
-        ctx.arc(icon.x + icon.size/2, icon.y + icon.size/4, icon.size/4, -Math.PI/2, Math.PI/2);
-        ctx.fill();
-    }
-}
-
 // Function to trigger the blue streak lost effect
 function triggerBlueStreakLostEffect() {
     if (consecutiveBlueHits > 0) {
@@ -1648,4 +1492,4 @@ function updateBlueStreakActivatedEffect() {
 }
 
 // Start the game
-update(); 
+update();
