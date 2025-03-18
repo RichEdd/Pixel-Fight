@@ -111,12 +111,12 @@ const UI = {
         active: false,
         pulseSize: 0
     },
-    // Dash indicator (horizontal bar above player)
+    // Dash indicator (horizontal bar below player)
     dashIndicator: {
-        width: 50,
-        height: 6,
-        padding: 2,
-        yOffset: 15 // Distance above player
+        width: 24, // Narrower than player (player width is 32)
+        height: 4, // Smaller height
+        padding: 1, 
+        yOffset: 8 // Distance below player
     },
     // Controller icon
     controllerIcon: {
@@ -124,6 +124,15 @@ const UI = {
         y: 30,
         size: 24
     }
+};
+
+// Add to the top with other game variables
+let blueStreakLost = {
+    active: false,
+    duration: 0,
+    fadeIn: 15,
+    show: 30,
+    fadeOut: 15
 };
 
 // Safe gamepad getter function with enhanced Safari support
@@ -920,6 +929,12 @@ function moveBalls() {
                 addScreenShake(10, 10);
                 score -= 10;
                 createExplosion(ballCenterX, ballCenterY);
+                
+                // Check if we need to trigger the blue streak lost effect
+                if (consecutiveBlueHits > 0) {
+                    triggerBlueStreakLostEffect();
+                }
+                
                 comboMultiplier = 1;
                 comboTimer = 0;
                 consecutiveBlueHits = 0;
@@ -1061,6 +1076,9 @@ function draw() {
     
     // Draw controller icon
     drawControllerIcon();
+    
+    // Draw blue streak lost effect
+    updateBlueStreakLostEffect();
     
     // Draw pause screen
     if (paused) {
@@ -1427,7 +1445,7 @@ function drawBlueStreakBar() {
 function drawDashIndicator() {
     const indicator = UI.dashIndicator;
     const x = player.x + player.width/2 - indicator.width/2;
-    const y = player.y - indicator.yOffset;
+    const y = player.y + player.height + indicator.yOffset;
     
     // Draw background
     ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
@@ -1479,6 +1497,52 @@ function drawControllerIcon() {
     ctx.beginPath();
     ctx.arc(icon.x + icon.size/2, icon.y + icon.size/4, icon.size/4, -Math.PI/2, Math.PI/2);
     ctx.fill();
+}
+
+// Function to trigger the blue streak lost effect
+function triggerBlueStreakLostEffect() {
+    if (consecutiveBlueHits > 0) {
+        blueStreakLost.active = true;
+        blueStreakLost.duration = blueStreakLost.fadeIn + blueStreakLost.show + blueStreakLost.fadeOut;
+        addScreenShake(12, 12); // Strong screen shake
+    }
+}
+
+// Function to update and draw the blue streak lost effect
+function updateBlueStreakLostEffect() {
+    if (!blueStreakLost.active) return;
+    
+    blueStreakLost.duration--;
+    
+    if (blueStreakLost.duration <= 0) {
+        blueStreakLost.active = false;
+        return;
+    }
+    
+    // Calculate alpha based on current phase (fade in, show, fade out)
+    let alpha = 1;
+    if (blueStreakLost.duration > blueStreakLost.show + blueStreakLost.fadeOut) {
+        // Fade in phase
+        const fadeProgress = (blueStreakLost.fadeIn + blueStreakLost.show + blueStreakLost.fadeOut) - blueStreakLost.duration;
+        alpha = fadeProgress / blueStreakLost.fadeIn;
+    } else if (blueStreakLost.duration < blueStreakLost.fadeOut) {
+        // Fade out phase
+        alpha = blueStreakLost.duration / blueStreakLost.fadeOut;
+    }
+    
+    // Draw the text
+    ctx.save();
+    ctx.fillStyle = `rgba(231, 76, 60, ${alpha})`; // Red color with calculated alpha
+    ctx.font = "bold 32px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    
+    // Add a slight wobble to the text
+    const wobbleX = (Math.random() - 0.5) * 4;
+    const wobbleY = (Math.random() - 0.5) * 4;
+    
+    ctx.fillText("BLUE STREAK LOST!", canvas.width/2 + wobbleX, canvas.height/2 - 50 + wobbleY);
+    ctx.restore();
 }
 
 // Start the game
