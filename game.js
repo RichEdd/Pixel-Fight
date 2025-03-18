@@ -2,6 +2,16 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
+// Load controller icon image
+const controllerImage = new Image();
+controllerImage.src = "Assets/game-controller-icon.jpeg";
+controllerImage.onload = function() {
+    console.log("Controller icon image loaded successfully");
+};
+controllerImage.onerror = function() {
+    console.error("Error loading controller icon image");
+};
+
 // Check for Safari browser
 const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
@@ -120,7 +130,7 @@ const UI = {
     },
     // Controller icon
     controllerIcon: {
-        x: canvas.width - 40,
+        x: 40, // Moved to top-left
         y: 30,
         size: 24
     }
@@ -128,6 +138,15 @@ const UI = {
 
 // Add to the top with other game variables
 let blueStreakLost = {
+    active: false,
+    duration: 0,
+    fadeIn: 15,
+    show: 30,
+    fadeOut: 15
+};
+
+// Add blue streak activated effect
+let blueStreakActivated = {
     active: false,
     duration: 0,
     fadeIn: 15,
@@ -923,6 +942,8 @@ function moveBalls() {
                 consecutiveBlueHits++;
                 if (consecutiveBlueHits >= BLUE_STREAK_REQUIREMENT && !bombAvailable) {
                     bombAvailable = true;
+                    // Trigger the blue streak activated effect
+                    triggerBlueStreakActivatedEffect();
                 }
             } else {
                 // Red ball effects (unchanged)
@@ -1079,6 +1100,9 @@ function draw() {
     
     // Draw blue streak lost effect
     updateBlueStreakLostEffect();
+    
+    // Draw blue streak activated effect
+    updateBlueStreakActivatedEffect();
     
     // Draw pause screen
     if (paused) {
@@ -1477,26 +1501,60 @@ function drawDashIndicator() {
 function drawControllerIcon() {
     const icon = UI.controllerIcon;
     
-    // Set color based on connection status
-    if (gamepadConnected) {
-        ctx.fillStyle = "#2ecc71"; // Green for connected
+    // Try to draw the controller image first
+    if (controllerImage.complete && controllerImage.naturalHeight !== 0) {
+        // Image is loaded successfully
+        ctx.save();
+        
+        // Apply opacity based on connection status
+        ctx.globalAlpha = gamepadConnected ? 1.0 : 0.4;
+        
+        // Draw the image
+        const iconSize = icon.size * 1.5; // Make it a bit larger than the original size
+        ctx.drawImage(
+            controllerImage, 
+            icon.x - iconSize/2, 
+            icon.y - iconSize/2, 
+            iconSize, 
+            iconSize
+        );
+        
+        // Add colored indicator based on connection status
+        ctx.beginPath();
+        ctx.arc(
+            icon.x + iconSize/2 - 5, 
+            icon.y - iconSize/2 + 5, 
+            5, 
+            0, 
+            Math.PI * 2
+        );
+        ctx.fillStyle = gamepadConnected ? "#2ecc71" : "#e74c3c"; // Green if connected, red if not
+        ctx.fill();
+        
+        ctx.restore();
     } else {
-        ctx.fillStyle = "rgba(255, 255, 255, 0.3)"; // Gray for disconnected
+        // Fallback to drawing the simple controller if image fails to load
+        // Set color based on connection status
+        if (gamepadConnected) {
+            ctx.fillStyle = "#2ecc71"; // Green for connected
+        } else {
+            ctx.fillStyle = "rgba(255, 255, 255, 0.3)"; // Gray for disconnected
+        }
+        
+        // Draw a simple controller icon
+        // Main body
+        ctx.fillRect(icon.x - icon.size/2, icon.y, icon.size, icon.size/2);
+        
+        // Left grip
+        ctx.beginPath();
+        ctx.arc(icon.x - icon.size/2, icon.y + icon.size/4, icon.size/4, Math.PI/2, 3*Math.PI/2);
+        ctx.fill();
+        
+        // Right grip
+        ctx.beginPath();
+        ctx.arc(icon.x + icon.size/2, icon.y + icon.size/4, icon.size/4, -Math.PI/2, Math.PI/2);
+        ctx.fill();
     }
-    
-    // Draw a simple controller icon
-    // Main body
-    ctx.fillRect(icon.x - icon.size/2, icon.y, icon.size, icon.size/2);
-    
-    // Left grip
-    ctx.beginPath();
-    ctx.arc(icon.x - icon.size/2, icon.y + icon.size/4, icon.size/4, Math.PI/2, 3*Math.PI/2);
-    ctx.fill();
-    
-    // Right grip
-    ctx.beginPath();
-    ctx.arc(icon.x + icon.size/2, icon.y + icon.size/4, icon.size/4, -Math.PI/2, Math.PI/2);
-    ctx.fill();
 }
 
 // Function to trigger the blue streak lost effect
@@ -1542,6 +1600,50 @@ function updateBlueStreakLostEffect() {
     const wobbleY = (Math.random() - 0.5) * 4;
     
     ctx.fillText("BLUE STREAK LOST!", canvas.width/2 + wobbleX, canvas.height/2 - 50 + wobbleY);
+    ctx.restore();
+}
+
+// Function to trigger the blue streak activated effect
+function triggerBlueStreakActivatedEffect() {
+    blueStreakActivated.active = true;
+    blueStreakActivated.duration = blueStreakActivated.fadeIn + blueStreakActivated.show + blueStreakActivated.fadeOut;
+    addScreenShake(5, 5); // Lighter screen shake than the lost effect
+}
+
+// Function to update and draw the blue streak activated effect
+function updateBlueStreakActivatedEffect() {
+    if (!blueStreakActivated.active) return;
+    
+    blueStreakActivated.duration--;
+    
+    if (blueStreakActivated.duration <= 0) {
+        blueStreakActivated.active = false;
+        return;
+    }
+    
+    // Calculate alpha based on current phase (fade in, show, fade out)
+    let alpha = 1;
+    if (blueStreakActivated.duration > blueStreakActivated.show + blueStreakActivated.fadeOut) {
+        // Fade in phase
+        const fadeProgress = (blueStreakActivated.fadeIn + blueStreakActivated.show + blueStreakActivated.fadeOut) - blueStreakActivated.duration;
+        alpha = fadeProgress / blueStreakActivated.fadeIn;
+    } else if (blueStreakActivated.duration < blueStreakActivated.fadeOut) {
+        // Fade out phase
+        alpha = blueStreakActivated.duration / blueStreakActivated.fadeOut;
+    }
+    
+    // Draw the text
+    ctx.save();
+    ctx.fillStyle = `rgba(52, 152, 219, ${alpha})`; // Blue color with calculated alpha
+    ctx.font = "bold 32px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    
+    // Add a slight wobble to the text (gentler than the lost effect)
+    const wobbleX = (Math.random() - 0.5) * 3;
+    const wobbleY = (Math.random() - 0.5) * 3;
+    
+    ctx.fillText("BLUE STREAK ACTIVATED!", canvas.width/2 + wobbleX, canvas.height/2 - 50 + wobbleY);
     ctx.restore();
 }
 
