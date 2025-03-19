@@ -127,6 +127,16 @@ const UI = {
         active: false,
         pulseSize: 0
     },
+    // Combo bar (vertical bar parallel to blue streak)
+    comboBar: {
+        x: 45, // Position it to the right of the blue streak bar
+        y: 100,
+        width: 15,
+        height: 150,
+        padding: 3,
+        active: true,
+        pulseSize: 0
+    },
     // Dash indicator (horizontal bar below player)
     dashIndicator: {
         width: 24, // Narrower than player (player width is 32)
@@ -162,9 +172,8 @@ let blueStreakActivated = {
     fadeOut: 15
 };
 
-// Lightning upgrade variables
+// Modify the lightning upgrade variables
 const LIGHTNING_STORM_DURATION = 300; // 5 seconds at 60fps
-const LIGHTNING_PARTICLE_COLORS = ['#3498db', '#2980b9', '#9b59b6', '#8e44ad'];
 let lightningStormActive = false;
 let lightningStormTimer = 0;
 let lightningUpgradeAvailable = false;
@@ -633,7 +642,12 @@ function activateBomb() {
         const centerX = ball.x + ball.width / 2;
         const centerY = ball.y + ball.height / 2;
         createExplosion(centerX, centerY);
-        score -= 5; // Half penalty for clearing red balls with bomb
+        
+        // Add points and update combo for red ball destruction
+        score += 5;
+        comboTimer = COMBO_TIME_LIMIT;
+        comboMultiplier = Math.min(comboMultiplier + 0.2, MAX_COMBO_MULTIPLIER);
+        createComboText(centerX, centerY, "+5");
     });
     
     // Create gather effect for all blue balls
@@ -641,18 +655,30 @@ function activateBomb() {
         const centerX = ball.x + ball.width / 2;
         const centerY = ball.y + ball.height / 2;
         createGatherEffect(centerX, centerY, player.x + player.width / 2, player.y + player.height / 2);
-        score += 3; // Slightly reduced bonus for gathering blue balls with bomb
         
-        // Add combo for each blue ball gathered
+        // Add points and update combo for blue ball collection
+        score += 3;
         comboTimer = COMBO_TIME_LIMIT;
-        comboMultiplier = Math.min(comboMultiplier + 0.2, MAX_COMBO_MULTIPLIER);
-        createComboText(centerX, centerY, `Combo x${comboMultiplier.toFixed(1)}`);
+        comboMultiplier = Math.min(comboMultiplier + 0.3, MAX_COMBO_MULTIPLIER);
+        createComboText(centerX, centerY, `+3 (x${comboMultiplier.toFixed(1)})`);
     });
+    
+    // Create a special effect for simultaneous destruction
+    if (redBalls.length > 0 && blueBalls.length > 0) {
+        const bonusPoints = (redBalls.length + blueBalls.length) * 2;
+        score += bonusPoints;
+        createComboText(
+            player.x + player.width / 2,
+            player.y - 30,
+            `Bonus +${bonusPoints}!`
+        );
+        comboMultiplier = Math.min(comboMultiplier + 0.5, MAX_COMBO_MULTIPLIER);
+    }
     
     // Clear all balls
     balls.length = 0;
     
-    // Reset bomb status
+    // Reset bomb status but maintain combo
     bombAvailable = false;
     consecutiveBlueHits = 0;
 }
@@ -857,7 +883,7 @@ function drawParticles() {
 function spawnBall() {
     if (Math.random() < 0.02) {
         // Determine if it's a red (penalty) or blue (bonus) ball
-        const isBonus = Math.random() < 0.3; // 30% chance for bonus balls
+        const isBonus = Math.random() < 0.7; // 70% chance for bonus balls (increased from 30%)
         
         const ball = {
             x: Math.random() * (canvas.width - 20),
@@ -983,7 +1009,7 @@ function moveBalls() {
                     triggerBlueStreakActivatedEffect();
                 }
             } else {
-                // Red ball effects (unchanged)
+                // Red ball effects
                 addScreenShake(10, 10);
                 score -= 10;
                 createExplosion(ballCenterX, ballCenterY);
@@ -1037,6 +1063,70 @@ function draw() {
     // Draw particles
     drawParticles();
     
+    // Draw blue streak bar
+    drawBlueStreakBar();
+    
+    // Draw combo bar
+    const comboBar = UI.comboBar;
+    const comboProgress = (comboMultiplier - 1) / (MAX_COMBO_MULTIPLIER - 1);
+    
+    // Draw combo bar background
+    ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
+    ctx.fillRect(comboBar.x, comboBar.y, comboBar.width, comboBar.height);
+    
+    // Draw combo bar fill with gradient
+    if (comboMultiplier > 1) {
+        const gradient = ctx.createLinearGradient(0, comboBar.y + comboBar.height, 0, comboBar.y + comboBar.height * (1 - comboProgress));
+        gradient.addColorStop(0, "#f1c40f"); // Yellow
+        gradient.addColorStop(1, "#e67e22"); // Orange
+        ctx.fillStyle = gradient;
+        ctx.fillRect(comboBar.x, comboBar.y + comboBar.height * (1 - comboProgress), 
+                    comboBar.width, comboBar.height * comboProgress);
+        
+        // Draw combo multiplier text
+        ctx.save();
+        ctx.font = "12px Arial";
+        ctx.fillStyle = "white";
+        ctx.textAlign = "center";
+        ctx.fillText(`${comboMultiplier.toFixed(1)}x`, 
+                     comboBar.x + comboBar.width / 2, 
+                     comboBar.y - 5);
+        
+        // Draw combo timer line
+        const timerWidth = (comboTimer / COMBO_TIME_LIMIT) * comboBar.width;
+        ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+        ctx.fillRect(comboBar.x, comboBar.y - 2, timerWidth, 2);
+        ctx.restore();
+    }
+    
+    // Draw lightning storm effects
+    if (lightningStormActive) {
+        // Add screen tint with pulsing effect
+        const tintIntensity = 0.2 + 0.1 * Math.sin(Date.now() / 100);
+        ctx.fillStyle = `rgba(147, 112, 219, ${tintIntensity})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw lightning effect around the edges of the screen
+        ctx.save();
+        ctx.strokeStyle = '#9b59b6';
+        ctx.lineWidth = 2;
+        ctx.shadowColor = '#8e44ad';
+        ctx.shadowBlur = 15;
+        ctx.globalAlpha = 0.5 + 0.3 * Math.sin(Date.now() / 100);
+        
+        // Draw lightning border
+        const offset = 10 * Math.sin(Date.now() / 200);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(canvas.width, 0);
+        ctx.lineTo(canvas.width, canvas.height);
+        ctx.lineTo(0, canvas.height);
+        ctx.closePath();
+        ctx.stroke();
+        
+        ctx.restore();
+    }
+    
     // Draw controller icon
     drawControllerIcon();
     
@@ -1059,36 +1149,39 @@ function draw() {
     
     // Draw lightning upgrade indicator when available
     if (lightningUpgradeAvailable && !lightningStormActive) {
-        const pulseSize = 4 * Math.sin(Date.now() / 200) + 4;
+        // Add pulsing electric aura around player
+        const pulseSize = 6 * Math.sin(Date.now() / 200) + 8;
         ctx.save();
-        ctx.strokeStyle = `rgba(147, 112, 219, ${0.5 + 0.2 * Math.sin(Date.now() / 200)})`;
-        ctx.lineWidth = 3;
+        
+        // Draw electric aura
+        const gradient = ctx.createRadialGradient(
+            player.x + player.width/2, player.y + player.height/2, player.width/2,
+            player.x + player.width/2, player.y + player.height/2, player.width/2 + pulseSize
+        );
+        gradient.addColorStop(0, 'rgba(147, 112, 219, 0.4)');
+        gradient.addColorStop(1, 'rgba(147, 112, 219, 0)');
+        
+        ctx.fillStyle = gradient;
         ctx.beginPath();
         ctx.arc(player.x + player.width/2, player.y + player.height/2, 
                 player.width/2 + pulseSize, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-    }
-    
-    // Draw lightning storm effects
-    if (lightningStormActive) {
-        // Add screen tint
-        ctx.fillStyle = `rgba(147, 112, 219, ${0.1 + 0.05 * Math.sin(Date.now() / 100)})`;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fill();
         
-        // Draw lightning bolts
-        for (const lightning of activeChainLightning) {
-            const alpha = lightning.duration / 10;
-            ctx.strokeStyle = lightning.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
-            ctx.lineWidth = 2;
-            
-            for (const segment of lightning.segments) {
-                ctx.beginPath();
-                ctx.moveTo(segment.x1, segment.y1);
-                ctx.lineTo(segment.x2, segment.y2);
-                ctx.stroke();
-            }
-        }
+        // Draw lightning bolt icon above player
+        ctx.strokeStyle = 'rgba(147, 112, 219, 0.8)';
+        ctx.lineWidth = 2;
+        const iconX = player.x + player.width/2;
+        const iconY = player.y - 20 - Math.abs(Math.sin(Date.now() / 300) * 5);
+        
+        // Draw stylized lightning bolt
+        ctx.beginPath();
+        ctx.moveTo(iconX, iconY - 8);
+        ctx.lineTo(iconX - 4, iconY);
+        ctx.lineTo(iconX + 2, iconY);
+        ctx.lineTo(iconX - 2, iconY + 8);
+        ctx.stroke();
+        
+        ctx.restore();
     }
     
     ctx.restore();
@@ -1148,8 +1241,10 @@ function update(currentTime) {
     }
     
     lastFrameTime = currentTime;
+    
+    // Check for pause input
+    checkPauseInput();
 
-    // Rest of your update code...
     try {
         if (!gameOver && !paused) {
             spawnBall();
@@ -1228,26 +1323,27 @@ function isButtonPressed(gamepad, buttonIndex, gamepadId) {
 
 // Separate pause detection function
 function checkPauseInput() {
-    // Check gamepad pause button (button 9)
+    // Check gamepad pause button (Start button - index 9)
     if (gamepadConnected) {
         const pads = getGamepads();
-        
         for (const gamepadId in gamepads) {
             const gamepad = pads[gamepadId];
             if (!gamepad) continue;
             
-            // Only check for pause button press
-            if (isButtonPressed(gamepad, 9, gamepadId)) {
-                console.log("Pause button pressed, toggling pause state");
-                paused = !paused;
-                return; // Exit after toggling pause to prevent multiple toggles
+            if (getButtonState(gamepad.buttons[9])) { // Start button
+                if (!keys.startPrevState) {
+                    paused = !paused;
+                    console.log("Start button pressed, toggling pause state to:", paused);
+                    keys.startPrevState = true;
+                }
+            } else {
+                keys.startPrevState = false;
             }
         }
     }
     
     // Check keyboard Escape key for pause
     if (keys["Escape"] && !gameOver) {
-        // Only toggle once per keypress
         if (!keys.escapePrevState) {
             paused = !paused;
             console.log("Escape key pressed, toggling pause state to:", paused);
@@ -1566,9 +1662,6 @@ function activateLightningStorm() {
     lightningStormTimer = LIGHTNING_STORM_DURATION;
     lightningUpgradeAvailable = false;
     addScreenShake(15, 15);
-    
-    // Create initial lightning effect
-    createLightningEffect();
 }
 
 function updateLightningStorm() {
@@ -1580,30 +1673,84 @@ function updateLightningStorm() {
     if (lightningStormActive) {
         lightningStormTimer--;
         
-        // Create lightning effects periodically
-        if (lightningStormTimer % 10 === 0) {
-            createLightningEffect();
+        // Create ambient lightning particles
+        if (lightningStormTimer % 3 === 0) {
+            // Create random lightning particles around the screen edges
+            const side = Math.floor(Math.random() * 4);
+            let x, y;
+            
+            switch(side) {
+                case 0: // top
+                    x = Math.random() * canvas.width;
+                    y = -10;
+                    break;
+                case 1: // right
+                    x = canvas.width + 10;
+                    y = Math.random() * canvas.height;
+                    break;
+                case 2: // bottom
+                    x = Math.random() * canvas.width;
+                    y = canvas.height + 10;
+                    break;
+                case 3: // left
+                    x = -10;
+                    y = Math.random() * canvas.height;
+                    break;
+            }
+            
+            // Create ambient lightning particle
+            particles.push({
+                x: x,
+                y: y,
+                size: Math.random() * 3 + 2,
+                speedX: (Math.random() - 0.5) * 8,
+                speedY: (Math.random() - 0.5) * 8,
+                color: '#9b59b6',
+                life: 20 + Math.random() * 10,
+                type: 'lightning'
+            });
         }
         
-        // Affect all balls on screen
-        for (let i = balls.length - 1; i >= 0; i--) {
-            const ball = balls[i];
-            const centerX = ball.x + ball.width / 2;
-            const centerY = ball.y + ball.height / 2;
+        // Process all balls every 5 frames
+        if (lightningStormTimer % 5 === 0) {
+            const playerCenterX = player.x + player.width/2;
+            const playerCenterY = player.y + player.height/2;
             
-            if (ball.isBonus) {
-                // Absorb blue balls
-                createGatherEffect(centerX, centerY, player.x + player.width / 2, player.y + player.height / 2);
-                score += 3;
-                comboTimer = COMBO_TIME_LIMIT;
-                createComboText(centerX, centerY, "+3");
-            } else {
-                // Destroy red balls
-                createExplosion(centerX, centerY);
-                score += 5;
-                createComboText(centerX, centerY, "+5");
+            // Process balls in reverse to safely remove them
+            for (let i = balls.length - 1; i >= 0; i--) {
+                const ball = balls[i];
+                if (!ball) continue;
+                
+                const ballCenterX = ball.x + ball.width/2;
+                const ballCenterY = ball.y + ball.height/2;
+                
+                if (ball.isBonus) {
+                    // Enhanced absorption effect for blue balls
+                    createEnhancedGatherEffect(ballCenterX, ballCenterY, playerCenterX, playerCenterY);
+                    score += 3;
+                    comboTimer = COMBO_TIME_LIMIT;
+                    comboMultiplier = Math.min(comboMultiplier + 0.2, MAX_COMBO_MULTIPLIER);
+                    createComboText(ballCenterX, ballCenterY, "+3");
+                } else {
+                    // Enhanced explosion effect for red balls
+                    createEnhancedExplosion(ballCenterX, ballCenterY);
+                    score += 5;
+                    comboTimer = COMBO_TIME_LIMIT;
+                    comboMultiplier = Math.min(comboMultiplier + 0.3, MAX_COMBO_MULTIPLIER);
+                    createComboText(ballCenterX, ballCenterY, "+5");
+                }
+                
+                // Create lightning connection effect
+                createLightningConnection(ballCenterX, ballCenterY, playerCenterX, playerCenterY);
+                
+                // Remove the ball
+                balls.splice(i, 1);
             }
-            balls.splice(i, 1);
+        }
+        
+        // Add screen shake based on remaining balls
+        if (balls.length > 0) {
+            addScreenShake(3, 3);
         }
         
         // End storm when timer runs out
@@ -1613,55 +1760,103 @@ function updateLightningStorm() {
     }
 }
 
-function createLightningEffect() {
-    // Create lightning bolts from the top of the screen
-    for (let i = 0; i < 3; i++) {
-        const startX = Math.random() * canvas.width;
-        const segments = generateLightningBolt(startX, -20, startX + (Math.random() - 0.5) * 200, canvas.height + 20);
-        
-        activeChainLightning.push({
-            segments: segments,
-            duration: 10,
-            color: LIGHTNING_PARTICLE_COLORS[Math.floor(Math.random() * LIGHTNING_PARTICLE_COLORS.length)]
-        });
-    }
+function createEnhancedGatherEffect(startX, startY, endX, endY) {
+    const particleCount = 20;
+    const colors = ['#9b59b6', '#8e44ad', '#2980b9', '#3498db'];
     
-    // Create particle effects
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < particleCount; i++) {
+        const angle = (i / particleCount) * Math.PI * 2;
+        const radius = 20;
+        const startRadius = 10 + Math.random() * 20;
+        
         particles.push({
-            x: Math.random() * canvas.width,
-            y: Math.random() * canvas.height,
+            x: startX + Math.cos(angle) * startRadius,
+            y: startY + Math.sin(angle) * startRadius,
             size: Math.random() * 4 + 2,
-            speedX: (Math.random() - 0.5) * 8,
-            speedY: (Math.random() - 0.5) * 8,
-            color: LIGHTNING_PARTICLE_COLORS[Math.floor(Math.random() * LIGHTNING_PARTICLE_COLORS.length)],
-            life: 20 + Math.random() * 10
+            targetX: endX,
+            targetY: endY,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            life: 30 + Math.random() * 20,
+            type: 'gather',
+            angle: angle,
+            radius: radius,
+            speed: 0.15 + Math.random() * 0.1,
+            progress: 0
         });
     }
 }
 
-function generateLightningBolt(x1, y1, x2, y2) {
-    const segments = [];
-    const numSegments = 12;
-    const maxOffset = 30;
+function createEnhancedExplosion(x, y) {
+    const particleCount = 25;
+    const colors = ['#9b59b6', '#8e44ad', '#e74c3c', '#c0392b'];
     
-    let prevX = x1;
-    let prevY = y1;
-    
-    for (let i = 1; i <= numSegments; i++) {
-        const t = i / numSegments;
-        const baseX = x1 + (x2 - x1) * t;
-        const baseY = y1 + (y2 - y1) * t;
+    // Create main explosion particles
+    for (let i = 0; i < particleCount; i++) {
+        const angle = (i / particleCount) * Math.PI * 2;
+        const speed = 4 + Math.random() * 4;
         
-        const x = i === numSegments ? x2 : baseX + (Math.random() - 0.5) * maxOffset;
-        const y = i === numSegments ? y2 : baseY + (Math.random() - 0.5) * maxOffset;
-        
-        segments.push({x1: prevX, y1: prevY, x2: x, y2: y});
-        prevX = x;
-        prevY = y;
+        particles.push({
+            x: x,
+            y: y,
+            size: Math.random() * 5 + 3,
+            speedX: Math.cos(angle) * speed,
+            speedY: Math.sin(angle) * speed,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            life: 25 + Math.random() * 15,
+            type: 'explosion',
+            rotation: Math.random() * Math.PI * 2,
+            rotationSpeed: (Math.random() - 0.5) * 0.2
+        });
     }
     
-    return segments;
+    // Create shockwave effect
+    particles.push({
+        x: x,
+        y: y,
+        size: 1,
+        maxSize: 60,
+        color: '#9b59b6',
+        life: 20,
+        type: 'shockwave'
+    });
+}
+
+function createLightningConnection(startX, startY, endX, endY) {
+    const segments = 8;
+    const points = [];
+    
+    // Generate lightning path
+    for (let i = 0; i <= segments; i++) {
+        const t = i / segments;
+        const x = startX + (endX - startX) * t;
+        const y = startY + (endY - startY) * t;
+        
+        // Add randomness to middle points
+        const offset = i > 0 && i < segments ? (Math.random() - 0.5) * 30 : 0;
+        points.push({
+            x: x + offset,
+            y: y + offset
+        });
+    }
+    
+    // Create particles along the path
+    for (let i = 0; i < points.length - 1; i++) {
+        const start = points[i];
+        const end = points[i + 1];
+        const steps = 3;
+        
+        for (let j = 0; j < steps; j++) {
+            const t = j / steps;
+            particles.push({
+                x: start.x + (end.x - start.x) * t,
+                y: start.y + (end.y - start.y) * t,
+                size: Math.random() * 3 + 2,
+                color: '#9b59b6',
+                life: 10 + Math.random() * 5,
+                type: 'lightning_path'
+            });
+        }
+    }
 }
 
 // Start the game
